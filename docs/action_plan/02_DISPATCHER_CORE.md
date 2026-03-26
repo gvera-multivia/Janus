@@ -251,3 +251,28 @@ El Dispatcher (`api/dispatcher.py`, clase `Dispatcher`, 418 líneas) es el cereb
   | `TASK_ASSIGNMENT_KEY` | `task_assignment` | Prefijo claves asignación |
   | `TASK_ASSIGNMENT_EXPIRE` | `14400` | TTL reserva en seg (4h) |
   - **Archivo**: `.env.example`
+
+---
+
+## [NUEVO] Propuesta Estratégica: Migración a Custom Workers + PostgreSQL
+
+Tras el análisis del Dispatcher y los problemas derivados de Celery, se ha propuesto y aprobado una nueva arquitectura que elimina Celery como dependencia y añade persistencia en PostgreSQL. 
+
+**Esta sección documenta el objetivo final hacia el que evolucionarán las tareas anteriores.**
+
+### Cambios Arquitectónicos Clave
+
+1.  **Eliminación de Celery**: En lugar de usar `celery_app.send_task()`, el Dispatcher inyectará las tareas directamente en colas privadas de Redis específicas para cada worker (`worker_queue:{worker_id}`).
+2.  **Historial en PostgreSQL**: El registro volátil en Redis (`task_assignment_history`) y las tablas de SQL Server (`automations_assignment_log`) se unificarán en una nueva tabla PostgreSQL `execution_history`.
+3.  **Workers Ligeros**: Los robots dejarán de ser workers de Celery para convertirse en procesos Python estándar (`BaseWorker`) que escucharán su propia cola en Redis mediante `BRPOP`.
+
+### Impacto en el Dispatcher (`api/dispatcher.py`)
+
+- **Scoring Híbrido**: El algoritmo `select_best_worker` leerá métricas de CPU/RAM desde Redis, pero sumará la **carga histórica consultando PostgreSQL** (`COUNT(*) desde execution_history`).
+- **Reserva Persistente**: La reserva atómica pasará de usar un simple flag `NX` en Redis a ser un registro con estado `ASSIGNED` en PostgreSQL.
+- **Fin de los reenvíos duplicados (BUG CRÍTICO)**: El nuevo modelo elimina el bucle de polling que causaba envíos múltiples. El Dispatcher asigna (PostgreSQL) -> Encola (Redis) y pasa a la siguiente tarea.
+
+### Beneficios Esperados
+- Reducción drástica del consumo de CPU (sin overhead de Kombu ni procesos manager de Celery).
+- Mayor capacidad de auditoría y análisis temporal gracias a PostgreSQL.
+- Aislamiento real entre workers (cada uno tiene su cola privada).

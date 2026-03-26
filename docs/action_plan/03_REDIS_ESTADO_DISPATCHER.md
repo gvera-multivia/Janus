@@ -210,3 +210,37 @@ Redis es el bus de control del Dispatcher. Almacena la cola de entrada, los hear
   redis-cli DEL unacked_index
   redis-cli DEL robot_tasks
   ```
+
+---
+
+## [NUEVO] Propuesta Estratégica: Estado Híbrido (Redis + PostgreSQL)
+
+Para soportar la nueva arquitectura de Custom Workers sin Celery, el manejo del estado evolucionará hacia un modelo híbrido más robusto.
+
+### La División del Estado
+
+1.  **Redis (Tiempo Real y Volátil)**:
+    - Se mantendrá para el **bus de mensajes** (`dispatcher_tasks_queue` y las nuevas colas privadas `worker_queue:{id}`).
+    - Se mantendrá para los **heartbeats** (`worker_status:{id}`) por su alta velocidad de lectura/escritura y capacidades de TTL automático.
+2.  **PostgreSQL (Persistencia y Auditoría)**:
+    - Reemplazará los registros duraderos y pesados de Redis (`task_assignment_log`, las reservas largas `task_assignment:{id}`, y los `task_registry:{id}`).
+    - Todo esto convergerá en una única tabla central: `execution_history`.
+
+### Estructura de `execution_history` (PostgreSQL)
+
+| Campo | Tipo | Descripción |
+| :--- | :--- | :--- |
+| `id` | UUID | PK. Coincide con `task_id` (Generado por el Enqueuer). |
+| `job_id` | String | ID del lote al que pertenece la tarea. |
+| `task_name` | String | Nombre del robot o proceso. |
+| `worker_id` | String | ID del worker asignado. |
+| `status` | Enum | PENDING, ASSIGNED, RUNNING, COMPLETED, FAILED. |
+| `payload` | JSONB | Argumentos originales de la tarea. |
+| `result` | JSONB | Resumen final o datos de salida estructurados. |
+| `error_message` | Text | Trazabilidad en caso de fallo. |
+
+### Beneficios del Modelo Híbrido
+
+-   **Eliminación de Tareas Zombi**: Al usar PostgreSQL con un ID fuerte desde el primer segundo, es trivial identificar tareas que quedaron colgadas en estados intermedios.
+-   **Balanceo Inteligente**: El Dispatcher consultará esta tabla para saber exactamente cuánta carga ha tenido un robot en la última hora, asegurando un reparto equitativo que sobrevive a reinicios del sistema.
+-   **Análisis BI**: Se podrán sacar métricas directas (volumen por hora, tasa de error por sede) usando SQL estándar sin parsear JSONs desde Redis.

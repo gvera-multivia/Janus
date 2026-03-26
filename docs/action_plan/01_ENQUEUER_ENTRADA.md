@@ -158,3 +158,23 @@ WHERE
         AND aal.robot_name = 'RobotAltas'
     )
 ```
+
+---
+
+## [NUEVO] Propuesta Estratégica: Enqueuer para Custom Workers
+
+En la nueva arquitectura sin Celery y con PostgreSQL, el rol del Enqueuer gana importancia como el **punto de origen de la trazabilidad**.
+
+### Nuevas Responsabilidades de `enqueue_task()`
+
+1.  **Nacimiento del `task_id`**: Ya no delegaremos la creación del UUID al Dispatcher. El Enqueuer generará el `task_id` inmediatamente al ser llamado.
+2.  **Registro Temprano (PostgreSQL)**: Antes de tocar Redis, el Enqueuer insertará un registro en la tabla `execution_history` con estado `PENDING`. Si falla el insert, la tarea no se orquesta, evitando tareas fantasma.
+3.  **Deduplicación Predictiva**: Se recomienda añadir una verificación pre-insert basada en el hash de los `kwargs` para rechazar peticiones idénticas en ventanas de tiempo muy cortas.
+
+### Nueva Firma Sugerida
+```python
+def enqueue_task(task_name, job_id=None, args=None, kwargs=None):
+    # 1. auto-generar UUID
+    # 2. INSERT INTO execution_history ... VALUES (..., 'PENDING')
+    # 3. RPUSH a dispatcher_tasks_queue
+```

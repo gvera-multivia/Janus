@@ -89,3 +89,35 @@ Para que cualquier script de automatización (como `dehu_automation/main.py`) se
   - `register_task_start()`: al iniciar.
   - `publish_task_progress()`: tras procesar cada cliente.
   - `register_task_end()`: al finalizar, reportando el número de éxitos y errores.
+
+---
+
+## [NUEVO] Propuesta Estratégica: Protocolo Custom Workers (Sin Celery)
+
+Para hacer el sistema más predecible y aislar verdaderamente las cargas de trabajo, la arquitectura evolucionará eliminando Celery del proceso de despacho.
+
+### 1. El Nuevo Flujo de Orquestación
+
+#### Fase A: Encolado (Enqueuer)
+El sistema genera un `task_id` (UUID) inmediato, lo registra en **PostgreSQL** (`execution_history`) como `PENDING` para garantizar auditoría, y luego inserta el JSON genérico en `dispatcher_tasks_queue` de Redis.
+
+#### Fase B: El Despacho (Dispatcher)
+1.  El Dispatcher saca la tarea de `dispatcher_tasks_queue`.
+2.  Busca el mejor worker disponible (usando heartbeats de Redis + carga histórica de PostgreSQL).
+3.  Actualiza el estado en PostgreSQL a `ASSIGNED`.
+4.  **Inyecta la tarea directamente en la cola privada del worker en Redis** (`LPUSH worker_queue:{worker_id}`).
+
+#### Fase C: Ejecución en el Worker (Robot como Proceso Puro)
+El robot ya no necesitará el framework de Celery. Será un script/demonio de Python puro que:
+1.  **Bloqueo de Escucha:** Hará `BRPOP worker_queue:{worker_id}` para esperar tareas sin consumir CPU.
+2.  **Confirmación de Inicio:** Al recibir la tarea, actualizará inmediatamente su estado en PostgreSQL a `RUNNING`.
+3.  **Ejecución de Negocio:** Instanciará el procesador correspondiente (ej. Dehú) pasando los `kwargs`.
+4.  **Finalización Fuerte:** Actualizará PostgreSQL a `COMPLETED` o `FAILED` con el resultado json estructurado.
+
+### 2. Nuevos Requisitos de Adaptación para Robots
+
+Para que un script existente pase a funcionar bajo este modelo de "Custom Worker":
+
+-   [ ] **Clase Base Unificada**: Deben heredar o instanciar una `BaseWorker` que se encargue automáticamente del hilo secundario de heartbeats (actualizando `worker_status:{id}` cada 10s en Redis).
+-   [ ] **Sustitución de Celery API**: Eliminar atributos como `self.request.id`. El `task_id` vendrá explícitamente en el payload JSON.
+-   [ ] **Cliente PostgreSQL Directo**: Reemplazar las llamadas asíncronas de registro de estado en Redis (`task_registry`) por inserts estructurados usando `psycopg` o SQLAlchemy hacia la tabla central `execution_history`.
