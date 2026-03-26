@@ -1,0 +1,56 @@
+[
+  {
+    "nif": "12345678A",
+    "nombre": "Maria Louders",
+    "email": "lourdes@email.com",
+    "id_redtrust": "43534 -"
+  },
+  {
+    "nif": "",
+    "nombre": "Cliente roto",
+    "email": "email_mal",
+    "id_redtrust": "31721 -"
+  },
+  {
+    "nif": "19865678C",
+    "nombre": "Juan",
+    "email": "juan@gmail.com",
+    "id_redtrust": "28751 -"
+  },
+  {
+    "nif": "36521596B",
+    "nombre": "Maria Caudet",
+    "email": "maria@email.com",
+    "id_redtrust": "43655 -"
+  },
+  {
+    "nif": "12543678C",
+    "nombre": "Hugo lloris",
+    "email": "hugo@email.com",
+    "id_redtrust": "39215 -"
+  },
+  {
+    "nif": "88845678A",
+    "nombre": "Nora alaber",
+    "email": "nora@email.com",
+    "id_redtrust": "34531 -"
+  },
+  {
+    "nif": "12391178B",
+    "nombre": "Agus benju",
+    "email": "benju@email.com",
+    "id_redtrust": "40731 -"
+  },
+  {
+    "nif": "92345338B",
+    "nombre": "Daniel alvarez",
+    "email": "daniel@email.com",
+    "id_redtrust": "36907 -"
+  },
+  {
+    "nif": "45145338A",
+    "nombre": "Enric Artero",
+    "email": "enric@email.com",
+    "id_redtrust": "41594 -"
+  }
+]
