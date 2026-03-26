@@ -137,6 +137,7 @@ El Dispatcher inyectará a la cola del worker (`worker_queue:{id}`) un JSON esta
   "task_name": "run_sede_job",
   "task_id": "UUID-1234",
   "job_id": "UUID-1234",
+  "worker_id": "worker-01P",
   "sede": "dehu",
   "source": "dispatcher",
   "clientes": [
@@ -151,6 +152,17 @@ El Dispatcher inyectará a la cola del worker (`worker_queue:{id}`) un JSON esta
 ```
 *El worker (Adapter) traducirá esto internamente, pero de cara al Dispatcher, este es el contrato inmutable en v1.*
 
+### Orden Estricto de Ejecución
+
+Para garantizar la consistencia entre PostgreSQL y el almacenamiento local, el Worker debe seguir este orden exacto:
+1. Recibe la task desde Redis.
+2. Valida la integridad del Payload.
+3. Actualiza el estado en PostgreSQL a `RUNNING` (guardando `started_at`).
+4. Persiste de inmediato en disco: `input.json`.
+5. Ejecuta la automatización (job).
+6. Persiste las evidencias en disco: `results.json` y `summary.json`.
+7. Actualiza PostgreSQL con estado final (`COMPLETED`, `COMPLETED_WITH_ERRORS` o `FAILED`).
+
 ### Artefactos de Salida Esperados
 
 El Dispatcher no extraerá el detalle de negocio de Redis ni PostgreSQL. El Worker debe seguir su ciclo estándar de escritura en su almacenamiento/red local, generando estrictamente:
@@ -161,4 +173,4 @@ Ruta base por ejecución: `outputs/jobs/<job_id>/`
 2.  `results.json`: Detalle (cliente a cliente) de éxito/fallo (`duracion`, `fase_error`, `captura_error`, etc).
 3.  `summary.json`: El archivo **canónico** para sistemas externos. Deberá reflejar el estado global y agregaciones (`exitos`, `errores`, `duracion_total`).
 
-El Dispatcher asumirá que el lifecycle del task finaliza una vez recibe la señal de `job_finished` desde PostgreSQL/Redis, asumiendo que estos artefactos ya residen en la carpeta pactada.
+El Dispatcher asumirá que el lifecycle del task finaliza una vez recibe la señal final en PostgreSQL, asumiendo que estos artefactos ya residen en la carpeta pactada.

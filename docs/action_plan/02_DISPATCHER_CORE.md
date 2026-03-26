@@ -292,8 +292,10 @@ De acuerdo al documento `dispatcher_worker_integration_contract.md`, el Dispatch
     - El Dispatcher asume que los workers interactivos (ej. Windows con Edge guiado) son `single_slot_interactive` (concurrencia máxima = 1).
     - El Dispatcher **nunca** enviará una segunda tarea a un worker cuyo `status` en el heartbeat sea `busy`.
 3.  **Payload Estándar Exigido**:
-    - El Dispatcher debe construir y enviar un JSON con los siguientes campos mínimos: `task_name` (ej. `run_sede_job`), `task_id`, `job_id`, `sede`, y una lista estructurada de `clientes` con `nif`, `nombre`, `email` y `id_redtrust`.
-    - Metadatos adicionales (`source`, `metadata`) son opcionales pero recomendados para trazabilidad.
-4.  **No Reintentos por Errores de Cliente**:
-    - Si el worker retorna `completed_with_errors` (fallos a nivel de cliente individual), el Dispatcher asume el job como cerrado.
-    - Los reintentos de nivel de Dispatcher se reservan estrictamente para caídas del worker (timeout), fallos de asignación o estados `failed` (fallo técnico catastrófico del job).
+    - El Dispatcher debe construir y enviar un JSON con los siguientes campos mínimos: `task_name` (ej. `run_sede_job`), `task_id`, `job_id`, `worker_id`, `sede`, y una lista estructurada de `clientes`.
+    - Metadatos adicionales (`source`, `metadata`) son opcionales pero recomendados.
+4.  **No Reintentos Automáticos (V1)**:
+    - Si el worker retorna `completed_with_errors` (fallos a nivel de cliente), el Dispatcher asume el job como cerrado (reintentos de cliente son responsabilidad del worker).
+    - **Timeouts**: Si un worker muere dejando un job en `RUNNING` (heartbeat expirado), **no se reencola automáticamente en V1**. Solo se avisa para recuperación manual.
+5.  **Idempotencia Delegada**:
+    - El Worker descartará cualquier tarea recibida si el estado en SQL ya es `RUNNING` o `COMPLETED`. Solo ejecutará tareas si aseguran estar en `ASSIGNED`.

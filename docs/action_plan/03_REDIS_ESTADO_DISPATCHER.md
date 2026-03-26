@@ -264,6 +264,13 @@ El Enum `status` de la tabla `execution_history` contendrá los siguientes estad
 | `failed` | Fallo técnico catastrófico impidiendo considerar el job como terminado correctamente. |
 | `cancelled` | Cancelación explícita (para fases posteriores). |
 
+**Obligaciones del Worker en DB**:
+Adicionalmente a cambiar el estado, el worker (mediante `psycopg`/`SQLAlchemy`) debe:
+- Registrar `started_at = NOW()` en el salto a `RUNNING`.
+- Registrar `updated_at = NOW()` en el salto final (`COMPLETED`/`FAILED`).
+- Guardar el contenido del `summary.json` en la columna `result`.
+- (Opcional) Trazas técnicas en `error_message` durante un `FAILED`.
+
 Al recibir `completed_with_errors`, el Dispatcher **no relanzará** el job. Los reintentos de cliente son responsabilidad de la lógica interna del worker.
 
 ### Señales Mínimas y Heartbeats en Redis
