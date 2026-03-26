@@ -121,3 +121,44 @@ Para que un script existente pase a funcionar bajo este modelo de "Custom Worker
 -   [ ] **Clase Base Unificada**: Deben heredar o instanciar una `BaseWorker` que se encargue automáticamente del hilo secundario de heartbeats (actualizando `worker_status:{id}` cada 10s en Redis).
 -   [ ] **Sustitución de Celery API**: Eliminar atributos como `self.request.id`. El `task_id` vendrá explícitamente en el payload JSON.
 -   [ ] **Cliente PostgreSQL Directo**: Reemplazar las llamadas asíncronas de registro de estado en Redis (`task_registry`) por inserts estructurados usando `psycopg` o SQLAlchemy hacia la tabla central `execution_history`.
+
+---
+
+## [NUEVO] Contrato Dispatcher <-> Worker (Alineación)
+
+Base operativa establecida en `dispatcher_worker_integration_contract.md`.
+
+### Payload Estándar de Entrada
+
+El Dispatcher inyectará a la cola del worker (`worker_queue:{id}`) un JSON estandarizado que el worker (Adapter) debe aceptar obligatoriamente:
+
+```json
+{
+  "task_name": "run_sede_job",
+  "task_id": "UUID-1234",
+  "job_id": "UUID-1234",
+  "sede": "dehu",
+  "source": "dispatcher",
+  "clientes": [
+    {
+      "nif": "12345678A",
+      "nombre": "Empresa S.L",
+      "email": "contacto@empresa.com",
+      "id_redtrust": "43534 -"
+    }
+  ]
+}
+```
+*El worker (Adapter) traducirá esto internamente, pero de cara al Dispatcher, este es el contrato inmutable en v1.*
+
+### Artefactos de Salida Esperados
+
+El Dispatcher no extraerá el detalle de negocio de Redis ni PostgreSQL. El Worker debe seguir su ciclo estándar de escritura en su almacenamiento/red local, generando estrictamente:
+
+Ruta base por ejecución: `outputs/jobs/<job_id>/`
+
+1.  `input.json`: Snapshot exacto del input recibido.
+2.  `results.json`: Detalle (cliente a cliente) de éxito/fallo (`duracion`, `fase_error`, `captura_error`, etc).
+3.  `summary.json`: El archivo **canónico** para sistemas externos. Deberá reflejar el estado global y agregaciones (`exitos`, `errores`, `duracion_total`).
+
+El Dispatcher asumirá que el lifecycle del task finaliza una vez recibe la señal de `job_finished` desde PostgreSQL/Redis, asumiendo que estos artefactos ya residen en la carpeta pactada.

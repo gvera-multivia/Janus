@@ -244,3 +244,37 @@ Para soportar la nueva arquitectura de Custom Workers sin Celery, el manejo del 
 -   **Eliminación de Tareas Zombi**: Al usar PostgreSQL con un ID fuerte desde el primer segundo, es trivial identificar tareas que quedaron colgadas en estados intermedios.
 -   **Balanceo Inteligente**: El Dispatcher consultará esta tabla para saber exactamente cuánta carga ha tenido un robot en la última hora, asegurando un reparto equitativo que sobrevive a reinicios del sistema.
 -   **Análisis BI**: Se podrán sacar métricas directas (volumen por hora, tasa de error por sede) usando SQL estándar sin parsear JSONs desde Redis.
+
+---
+
+## [NUEVO] Contrato Dispatcher <-> Worker (Alineación)
+
+De acuerdo al documento `dispatcher_worker_integration_contract.md`, se estandarizan los estados del ciclo de vida y las señales mínimas requeridas.
+
+### Estados Mínimos del Job en PostgreSQL
+
+El Enum `status` de la tabla `execution_history` contendrá los siguientes estados alineados con el contrato:
+
+| Estado | Significado (Contrato) |
+| --- | --- |
+| `pending` | Task creada o asignada pero no iniciada en el worker. |
+| `running` | Job aceptado e iniciado por el worker. |
+| `completed` | Job terminado con éxito global (sin errores de cliente). |
+| `completed_with_errors` | Job terminado generando artefactos válidos, pero con fallos a nivel de cliente. |
+| `failed` | Fallo técnico catastrófico impidiendo considerar el job como terminado correctamente. |
+| `cancelled` | Cancelación explícita (para fases posteriores). |
+
+Al recibir `completed_with_errors`, el Dispatcher **no relanzará** el job. Los reintentos de cliente son responsabilidad de la lógica interna del worker.
+
+### Señales Mínimas y Heartbeats en Redis
+
+La clave de estado volátil `worker_status:{worker_id}` (Heartbeat) almacenará periódicamente la siguiente información dinámica para alimentar el scoring del Dispatcher:
+
+| Campo Heartbeat | Relevancia para el Dispatcher |
+| --- | --- |
+| `worker_id` | Identificador base para nombrar la `worker_queue:{id}`. |
+| `status` | `free` (disponible), `busy` (ejecutando un job/task), u `offline` (sin latidos). Fundamental para el filtro de 'single-slot interactive' (solo admitirá nuevas tareas en estado `free`). |
+| `current_task` | (Opcional) Referencia cruzada del `task_id`/`job_id` actualmente procesado. |
+| `cpu_percent` | Input directo del algoritmo de scoring. |
+| `memory_percent` | Input directo del algoritmo de scoring. |
+| `timestamp` | Control de caducidad (TTL). |

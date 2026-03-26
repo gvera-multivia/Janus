@@ -276,3 +276,24 @@ Tras el análisis del Dispatcher y los problemas derivados de Celery, se ha prop
 - Reducción drástica del consumo de CPU (sin overhead de Kombu ni procesos manager de Celery).
 - Mayor capacidad de auditoría y análisis temporal gracias a PostgreSQL.
 - Aislamiento real entre workers (cada uno tiene su cola privada).
+
+---
+
+## [NUEVO] Contrato Dispatcher <-> Worker (Alineación)
+
+De acuerdo al documento `dispatcher_worker_integration_contract.md`, el Dispatcher (Control Plane) y el Worker (Execution Plane) tienen fronteras claras.
+
+### Reglas de Integración para el Dispatcher
+
+1.  **Unidad de Trabajo Uniforme (v1)**:
+    - El Dispatcher debe asegurar que en el nivel inicial (v1), el `task_id` (generado por el orquestador) y el `job_id` (entendido por el worker) sean **idénticos**. 
+    - Regla: `task_id == job_id`.
+2.  **Gestión de Disponibilidad (Single-Slot)**:
+    - El Dispatcher asume que los workers interactivos (ej. Windows con Edge guiado) son `single_slot_interactive` (concurrencia máxima = 1).
+    - El Dispatcher **nunca** enviará una segunda tarea a un worker cuyo `status` en el heartbeat sea `busy`.
+3.  **Payload Estándar Exigido**:
+    - El Dispatcher debe construir y enviar un JSON con los siguientes campos mínimos: `task_name` (ej. `run_sede_job`), `task_id`, `job_id`, `sede`, y una lista estructurada de `clientes` con `nif`, `nombre`, `email` y `id_redtrust`.
+    - Metadatos adicionales (`source`, `metadata`) son opcionales pero recomendados para trazabilidad.
+4.  **No Reintentos por Errores de Cliente**:
+    - Si el worker retorna `completed_with_errors` (fallos a nivel de cliente individual), el Dispatcher asume el job como cerrado.
+    - Los reintentos de nivel de Dispatcher se reservan estrictamente para caídas del worker (timeout), fallos de asignación o estados `failed` (fallo técnico catastrófico del job).
